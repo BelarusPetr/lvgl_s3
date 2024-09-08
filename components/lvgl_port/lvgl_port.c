@@ -1,11 +1,3 @@
-/**
- * @file lv_port_disp_templ.c
- *
- */
-
-/*Copy this file as "lv_port_disp.c" and set this value to "1" to enable content*/
-#if 1
-
 /*********************
  *      INCLUDES
  *********************/
@@ -15,12 +7,17 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "esp_timer.h"
+#include "driver/gpio.h"
 
 /*********************
  *      DEFINES
  *********************/
-#define MY_DISP_HOR_RES    128
-#define MY_DISP_VER_RES    64
+#define MY_DISP_HOR_RES    192
+#define MY_DISP_VER_RES    96
+#define LV_TICK_PERIOD_MS 10
+
+#define BTN_GPIO GPIO_NUM_0
 
 /**********************
  *      TYPEDEFS
@@ -38,7 +35,14 @@ static void disp_flush_to_console(lv_disp_drv_t * disp_drv, const lv_area_t * ar
 /**********************
  *  STATIC VARIABLES
  **********************/
+static lv_style_t base_btn_style;
+static lv_style_t base_label_style;
+static lv_style_t battery_label_style;
+static lv_style_t battery_voltage_style;
+static lv_style_t battery_charge_style;
 
+static const int btn_width = 192;
+static const int btn_height = 24;
 /**********************
  *      MACROS
  **********************/
@@ -47,17 +51,125 @@ static void disp_flush_to_console(lv_disp_drv_t * disp_drv, const lv_area_t * ar
  *   GLOBAL FUNCTIONS
  **********************/
 
-void lv_tick_task(void*) {
-    while(1) {
-        lv_tick_inc(10);
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
+void init_styles() {
+/**********************
+     *       STYLES
+     **********************/
+    
+    // base_btn_style
+    lv_style_init(&base_btn_style);
+    lv_style_set_text_color(&base_btn_style, lv_color_black());  // Цвет текста
+    lv_style_set_radius(&base_btn_style, 0);                     // Радиус скругления
+    lv_style_set_text_font(&base_btn_style, &lv_font_unscii_8);  // Шрифт текста
+    lv_style_set_text_align(&base_btn_style, LV_TEXT_ALIGN_CENTER);
+    // base_btn_style
+
+    // base_label_style
+    lv_style_init(&base_label_style);
+    lv_style_set_text_color(&base_label_style, lv_color_white());  // Цвет текста
+    lv_style_set_radius(&base_label_style, 0);                     // Радиус скругления
+    lv_style_set_text_font(&base_label_style, &lv_font_unscii_8);  // Шрифт текста
+    lv_style_set_text_align(&base_label_style, LV_TEXT_ALIGN_CENTER);
+    // base_label_style
+
+    // battery_voltage_style
+    lv_style_init(&battery_voltage_style);
+    lv_style_set_text_color(&battery_voltage_style, lv_color_white());  // Цвет текста
+    lv_style_set_radius(&battery_voltage_style, 0);                     // Радиус скругления
+    lv_style_set_text_font(&battery_voltage_style, &lv_font_unscii_8);  // Шрифт текста
+    lv_style_set_text_align(&battery_voltage_style, LV_TEXT_ALIGN_CENTER);
+    lv_style_set_text_letter_space(&battery_charge_style, 0);
+    // battery_voltage_style
+
+    // battery_charge_style
+    lv_style_init(&battery_charge_style);
+    lv_style_set_text_color(&battery_charge_style, lv_color_white());  // Цвет текста
+    lv_style_set_radius(&battery_charge_style, 0);                     // Радиус скругления
+    lv_style_set_text_font(&battery_charge_style, &lv_font_unscii_8);  // Шрифт текста
+    lv_style_set_text_align(&battery_charge_style, LV_TEXT_ALIGN_CENTER);
+    lv_style_set_text_letter_space(&battery_charge_style, 0);
+    // battery_charge_style
+
+    
+    lv_style_set_width(&base_btn_style, btn_width);
+    lv_style_set_height(&base_btn_style, btn_height);
+}
+
+void encoder_read(lv_indev_drv_t * drv, lv_indev_data_t * data){
+  data->enc_diff = 0;
+
+  if(gpio_get_level(BTN_GPIO) == 0) data->state = LV_INDEV_STATE_PRESSED;
+  else data->state = LV_INDEV_STATE_RELEASED;
+}
+
+void create_demo_application(void) {
+    gpio_reset_pin(BTN_GPIO);
+    gpio_set_direction(BTN_GPIO, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(BTN_GPIO, GPIO_PULLUP_ONLY);
+
+    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_black(), LV_STATE_DEFAULT);    // Установка цвета фона
+    init_styles();
+    
+    lv_indev_drv_t indev_drv;
+    lv_indev_drv_init(&indev_drv);
+    indev_drv.read_cb = encoder_read;
+    indev_drv.type = LV_INDEV_TYPE_ENCODER;
+    lv_indev_drv_register(&indev_drv);
+
+    /**********************
+     *      ELEMENTS
+     **********************/
+    lv_obj_t * bat_chrg = lv_label_create(lv_scr_act());
+    lv_obj_t * bat_volt = lv_label_create(lv_scr_act());
+    lv_obj_t * menu_mode = lv_label_create(lv_scr_act());
+
+    lv_obj_t * btn1 = lv_btn_create(lv_scr_act());
+    lv_obj_t * btn2 = lv_btn_create(lv_scr_act());
+    lv_obj_t * btn3 = lv_btn_create(lv_scr_act());
+    // lv_obj_t * btn4 = lv_btn_create(lv_scr_act());
+
+    lv_obj_t * label1 = lv_label_create(btn1);
+    lv_obj_t * label2 = lv_label_create(btn2);
+    lv_obj_t * label3 = lv_label_create(btn3);
+    // lv_obj_t * label4 = lv_label_create(btn4);
+
+    lv_label_set_text(label1, "DRONE TYPES");
+    lv_label_set_text(label2, "NOTIFICATIONS");
+    lv_label_set_text(label3, "DISPLAY SETTINGS");
+    // lv_label_set_text(label4, "4");
+
+    lv_label_set_text(bat_chrg, "███");
+    lv_label_set_text(bat_volt, "3.72");
+    lv_label_set_text(menu_mode, "Settings");
+
+    lv_obj_add_style(btn1, &base_btn_style, LV_STATE_DEFAULT);
+    lv_obj_add_style(btn2, &base_btn_style, LV_STATE_DEFAULT);
+    lv_obj_add_style(btn3, &base_btn_style, LV_STATE_DEFAULT);
+    // lv_obj_add_style(btn4, &base_btn_style, LV_STATE_DEFAULT);
+
+    lv_obj_add_style(bat_chrg, &battery_charge_style, LV_STATE_DEFAULT);
+    lv_obj_add_style(bat_volt, &battery_voltage_style, LV_STATE_DEFAULT);
+    lv_obj_add_style(menu_mode, &base_label_style, LV_STATE_DEFAULT);
+
+    // lv_obj_align(btn1, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_set_pos(btn1, 0, btn_height);
+    lv_obj_set_pos(btn2, 0, btn_height * 2 + 1);
+    lv_obj_set_pos(btn3, 0, btn_height * 3 + 2);
+
+    lv_obj_set_pos(bat_chrg, MY_DISP_HOR_RES - 27, 0);
+    lv_obj_set_pos(bat_volt, MY_DISP_HOR_RES - 60, 0);
+    lv_obj_set_pos(menu_mode, 0, 0);
+}
+
+static void lv_tick_task(void *arg) {
+    (void) arg;
+
+    lv_tick_inc(LV_TICK_PERIOD_MS);
 }
 
 SemaphoreHandle_t xGuiSemaphore;
 
-void lv_port_disp_init(void)
-{
+static void guiTask(void *pvParameter) {
     xGuiSemaphore = xSemaphoreCreateMutex();
     lv_init();
     /*-------------------------
@@ -67,28 +179,11 @@ void lv_port_disp_init(void)
 
     static lv_disp_draw_buf_t draw_buf_dsc_1;
 
-    static lv_color_t buf_1[MY_DISP_HOR_RES * 64];                          /*A buffer for 10 rows*/
+    static lv_color_t buf_1[MY_DISP_HOR_RES * MY_DISP_VER_RES];                          /*A buffer for 10 rows*/
 
-    lv_disp_draw_buf_init(&draw_buf_dsc_1, buf_1, NULL, MY_DISP_HOR_RES * 64);   /*Initialize the display buffer*/
+    lv_disp_draw_buf_init(&draw_buf_dsc_1, buf_1, NULL, MY_DISP_HOR_RES * MY_DISP_VER_RES);   /*Initialize the display buffer*/
 
     printf("buffer init\n");
-
-    // /* Example for 2) */
-    // static lv_disp_draw_buf_t draw_buf_dsc_2;
-    // static lv_color_t buf_2_1[MY_DISP_HOR_RES * 10];                        /*A buffer for 10 rows*/
-    // static lv_color_t buf_2_2[MY_DISP_HOR_RES * 10];                        /*An other buffer for 10 rows*/
-    // lv_disp_draw_buf_init(&draw_buf_dsc_2, buf_2_1, buf_2_2, MY_DISP_HOR_RES * 10);   /*Initialize the display buffer*/
-
-    // /* Example for 3) also set disp_drv.full_refresh = 1 below*/
-    // static lv_disp_draw_buf_t draw_buf_dsc_3;
-    // static lv_color_t buf_3_1[MY_DISP_HOR_RES * MY_DISP_VER_RES];            /*A screen sized buffer*/
-    // static lv_color_t buf_3_2[MY_DISP_HOR_RES * MY_DISP_VER_RES];            /*Another screen sized buffer*/
-    // lv_disp_draw_buf_init(&draw_buf_dsc_3, buf_3_1, buf_3_2,
-    //                       MY_DISP_VER_RES * LV_VER_RES_MAX);   /*Initialize the display buffer*/
-
-    /*-----------------------------------
-     * Register the display in LVGL
-     *----------------------------------*/
 
     static lv_disp_drv_t disp_drv;                         /*Descriptor of a display driver*/
     lv_disp_drv_init(&disp_drv);                    /*Basic initialization*/
@@ -117,62 +212,35 @@ void lv_port_disp_init(void)
     lv_disp_drv_register(&disp_drv);
     printf("drv reg\n");
 
-    lv_style_t style;
-    lv_style_init(&style);
+    /* Create and start a periodic timer interrupt to call lv_tick_inc */
+    const esp_timer_create_args_t periodic_timer_args = {
+        .callback = &lv_tick_task,
+        .name = "periodic_gui"
+    };
+    esp_timer_handle_t periodic_timer; 
+    ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &periodic_timer));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, LV_TICK_PERIOD_MS * 1000));
 
-    lv_style_set_text_color(&style, lv_color_white());
-    lv_style_set_bg_color(&style, lv_color_black());
+    create_demo_application();
 
-    lv_obj_t * btn1 = lv_btn_create(lv_scr_act());
-    lv_obj_t * btn2 = lv_btn_create(lv_scr_act());
-
-    lv_obj_t * label1 = lv_label_create(btn1);
-    lv_obj_t * label2 = lv_label_create(btn2);
-        
-    lv_label_set_text(label1, "Btn1");
-    lv_label_set_text(label2, "Btn2");
-
-    lv_obj_add_style(btn1, &style, LV_STATE_DEFAULT);
-    lv_obj_add_style(btn2, &style, LV_STATE_DEFAULT);
-
-    lv_obj_align(btn1, LV_ALIGN_LEFT_MID, 0, 0);
-    lv_obj_align(btn2, LV_ALIGN_RIGHT_MID, 0, 0);
-
-    printf("label set\n");
-
-    xTaskCreatePinnedToCore(lv_tick_task, "lv_tick", 1024, NULL, 0, NULL, 1);
+    
 
     while (1) {
         /* Delay 1 tick (assumes FreeRTOS tick is 10ms */
         vTaskDelay(pdMS_TO_TICKS(10));
-        lv_tick_inc(10);
+
         /* Try to take the semaphore, call lvgl related function on success */
         if (pdTRUE == xSemaphoreTake(xGuiSemaphore, portMAX_DELAY)) {
             lv_task_handler();
             xSemaphoreGive(xGuiSemaphore);
        }
     }
-    
 }
 
-static const char *lt[] = {
-    /* 0 */ "  ",
-    /* 1 */ "\u2580 ",
-    /* 2 */ " \u2580",
-    /* 3 */ "\u2580\u2580",
-    /* 4 */ "\u2584 ",
-    /* 5 */ "\u2588 ",
-    /* 6 */ "\u2584\u2580",
-    /* 7 */ "\u2588\u2580",
-    /* 8 */ " \u2584",
-    /* 9 */ "\u2580\u2584",
-    /* 10 */ " \u2588",
-    /* 11 */ "\u2580\u2588",
-    /* 12 */ "\u2584\u2584",
-    /* 13 */ "\u2588\u2584",
-    /* 14 */ "\u2584\u2588",
-    /* 15 */ "\u2588\u2588",
-};
+void lv_port_disp_init(void)
+{
+    xTaskCreatePinnedToCore(guiTask, "gui", 4096*2, NULL, 0, NULL, 1);    
+}
 
 /**********************
  *   STATIC FUNCTIONS
@@ -211,11 +279,11 @@ static void disp_flush_to_console(lv_disp_drv_t * disp_drv, const lv_area_t * ar
         int32_t x;
         int32_t y;
 
-        bool string[128] = {false};
+        bool string[MY_DISP_HOR_RES] = {false};
         bool even = false;
 
         printf("\u2554");
-        for(int i = 0; i < 128 + 2; ++i) printf("\u2550");
+        for(int i = 0; i < MY_DISP_HOR_RES + 2; ++i) printf("\u2550");
         printf("\u2557\n");
 
 
@@ -236,7 +304,7 @@ static void disp_flush_to_console(lv_disp_drv_t * disp_drv, const lv_area_t * ar
             even = !even;
         }
         printf("\u255A");
-        for(int i = 0; i < 128 + 2; ++i) printf("\u2550");
+        for(int i = 0; i < MY_DISP_HOR_RES + 2; ++i) printf("\u2550");
         printf("\u255D\n");
     }
 
@@ -244,27 +312,3 @@ static void disp_flush_to_console(lv_disp_drv_t * disp_drv, const lv_area_t * ar
      *Inform the graphics library that you are ready with the flushing*/
     lv_disp_flush_ready(disp_drv);
 }
-
-/*OPTIONAL: GPU INTERFACE*/
-
-/*If your MCU has hardware accelerator (GPU) then you can use it to fill a memory with a color*/
-//static void gpu_fill(lv_disp_drv_t * disp_drv, lv_color_t * dest_buf, lv_coord_t dest_width,
-//                    const lv_area_t * fill_area, lv_color_t color)
-//{
-//    /*It's an example code which should be done by your GPU*/
-//    int32_t x, y;
-//    dest_buf += dest_width * fill_area->y1; /*Go to the first line*/
-//
-//    for(y = fill_area->y1; y <= fill_area->y2; y++) {
-//        for(x = fill_area->x1; x <= fill_area->x2; x++) {
-//            dest_buf[x] = color;
-//        }
-//        dest_buf+=dest_width;    /*Go to the next line*/
-//    }
-//}
-
-#else /*Enable this file at the top*/
-
-/*This dummy typedef exists purely to silence -Wpedantic.*/
-typedef int keep_pedantic_happy;
-#endif
