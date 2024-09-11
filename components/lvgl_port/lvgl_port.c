@@ -11,6 +11,12 @@
 #include "driver/gpio.h"
 
 /*********************
+ *      FONTS
+ *********************/
+// #include "bit_cell_8.h"
+#include "public_pixel.h"
+
+/*********************
  *      DEFINES
  *********************/
 #define MY_DISP_HOR_RES    192
@@ -37,11 +43,14 @@ static void disp_flush_to_console(lv_disp_drv_t * disp_drv, const lv_area_t * ar
  **********************/
 static lv_style_t base_btn_style;
 static lv_style_t base_label_style;
-static lv_style_t battery_label_style;
 static lv_style_t battery_voltage_style;
 static lv_style_t battery_charge_style;
+static lv_style_t scrollbar_style;
+static lv_style_t selected_btn_style;
 
-static const int btn_width = 192;
+static lv_indev_drv_t indev_encoder;
+
+static const int btn_width = 160;
 static const int btn_height = 24;
 /**********************
  *      MACROS
@@ -52,10 +61,16 @@ static const int btn_height = 24;
  **********************/
 
 void init_styles() {
-/**********************
-     *       STYLES
-     **********************/
-    
+    // scrollbar_style
+    lv_style_init(&scrollbar_style);
+    lv_style_set_radius(&scrollbar_style, 0);                     // Радиус скругления
+    lv_style_set_width(&scrollbar_style, 8);
+    lv_style_set_height(&scrollbar_style, 8);
+    lv_style_set_pad_top(&scrollbar_style, 20); 
+    lv_style_set_bg_color(&scrollbar_style, lv_color_white());
+    // lv_obj_clear_flag(&scrollbar_style, LV_OBJ_FLAG_SCROLL_ONE);
+    // scrollbar_style
+
     // base_btn_style
     lv_style_init(&base_btn_style);
     lv_style_set_text_color(&base_btn_style, lv_color_black());  // Цвет текста
@@ -64,6 +79,16 @@ void init_styles() {
     lv_style_set_text_align(&base_btn_style, LV_TEXT_ALIGN_CENTER);
     // base_btn_style
 
+    // selected_btn_style
+    lv_style_set_border_color(&selected_btn_style, lv_color_black());
+    lv_style_set_border_width(&selected_btn_style, 2);
+    lv_style_init(&selected_btn_style);
+    lv_style_set_text_color(&selected_btn_style, lv_color_black());  // Цвет текста
+    lv_style_set_radius(&selected_btn_style, 0);                     // Радиус скругления
+    lv_style_set_text_font(&selected_btn_style, &lv_font_unscii_8);  // Шрифт текста
+    lv_style_set_text_align(&selected_btn_style, LV_TEXT_ALIGN_CENTER);
+    // selected_btn_style
+
     // base_label_style
     lv_style_init(&base_label_style);
     lv_style_set_text_color(&base_label_style, lv_color_white());  // Цвет текста
@@ -71,14 +96,14 @@ void init_styles() {
     lv_style_set_text_font(&base_label_style, &lv_font_unscii_8);  // Шрифт текста
     lv_style_set_text_align(&base_label_style, LV_TEXT_ALIGN_CENTER);
     // base_label_style
-
+    
     // battery_voltage_style
     lv_style_init(&battery_voltage_style);
     lv_style_set_text_color(&battery_voltage_style, lv_color_white());  // Цвет текста
     lv_style_set_radius(&battery_voltage_style, 0);                     // Радиус скругления
     lv_style_set_text_font(&battery_voltage_style, &lv_font_unscii_8);  // Шрифт текста
     lv_style_set_text_align(&battery_voltage_style, LV_TEXT_ALIGN_CENTER);
-    lv_style_set_text_letter_space(&battery_charge_style, 0);
+    lv_style_set_text_letter_space(&battery_charge_style, 2);
     // battery_voltage_style
 
     // battery_charge_style
@@ -102,19 +127,23 @@ void encoder_read(lv_indev_drv_t * drv, lv_indev_data_t * data){
   else data->state = LV_INDEV_STATE_RELEASED;
 }
 
-void create_demo_application(void) {
+void init_ui_elements(void) {
     gpio_reset_pin(BTN_GPIO);
     gpio_set_direction(BTN_GPIO, GPIO_MODE_INPUT);
     gpio_set_pull_mode(BTN_GPIO, GPIO_PULLUP_ONLY);
 
+    lv_obj_set_scrollbar_mode(lv_scr_act(), LV_SCROLLBAR_MODE_ON);
     lv_obj_set_style_bg_color(lv_scr_act(), lv_color_black(), LV_STATE_DEFAULT);    // Установка цвета фона
-    init_styles();
+    lv_obj_add_style(lv_scr_act(), &scrollbar_style, LV_PART_SCROLLBAR | LV_STATE_SCROLLED);
     
-    lv_indev_drv_t indev_drv;
-    lv_indev_drv_init(&indev_drv);
-    indev_drv.read_cb = encoder_read;
-    indev_drv.type = LV_INDEV_TYPE_ENCODER;
-    lv_indev_drv_register(&indev_drv);
+    /**********************
+     *    INPUT DEVICE
+     **********************/
+    
+    lv_indev_drv_init(&indev_encoder);
+    indev_encoder.read_cb = encoder_read;
+    indev_encoder.type = LV_INDEV_TYPE_ENCODER;
+    lv_indev_t * my_indev = lv_indev_drv_register(&indev_encoder);
 
     /**********************
      *      ELEMENTS
@@ -126,30 +155,49 @@ void create_demo_application(void) {
     lv_obj_t * btn1 = lv_btn_create(lv_scr_act());
     lv_obj_t * btn2 = lv_btn_create(lv_scr_act());
     lv_obj_t * btn3 = lv_btn_create(lv_scr_act());
-    // lv_obj_t * btn4 = lv_btn_create(lv_scr_act());
 
     lv_obj_t * label1 = lv_label_create(btn1);
     lv_obj_t * label2 = lv_label_create(btn2);
     lv_obj_t * label3 = lv_label_create(btn3);
-    // lv_obj_t * label4 = lv_label_create(btn4);
 
-    lv_label_set_text(label1, "DRONE TYPES");
+    lv_label_set_text(label1, "Типы БПЛА");
     lv_label_set_text(label2, "NOTIFICATIONS");
-    lv_label_set_text(label3, "DISPLAY SETTINGS");
-    // lv_label_set_text(label4, "4");
+    // lv_label_set_text(label3, "DISPLAY SETTINGS");
 
-    lv_label_set_text(bat_chrg, "███");
+    lv_label_set_text(bat_chrg, "###");
     lv_label_set_text(bat_volt, "3.72");
-    lv_label_set_text(menu_mode, "Settings");
+    lv_label_set_text(menu_mode, "Settings");   
 
+    /**********************
+     *      GROUPS
+     **********************/
+    lv_group_t * group0 = lv_group_create();
+    lv_group_add_obj(group0, btn1);
+    lv_group_add_obj(group0, btn2);
+    lv_group_add_obj(group0, btn3);
+
+    lv_indev_set_group(my_indev, group0);
+
+    /**********************
+     *      STYLES
+     **********************/
     lv_obj_add_style(btn1, &base_btn_style, LV_STATE_DEFAULT);
     lv_obj_add_style(btn2, &base_btn_style, LV_STATE_DEFAULT);
     lv_obj_add_style(btn3, &base_btn_style, LV_STATE_DEFAULT);
+
+    lv_obj_add_style(btn1, &selected_btn_style, LV_STATE_FOCUSED);
+    lv_obj_add_style(btn2, &selected_btn_style, LV_STATE_FOCUSED);
+    lv_obj_add_style(btn3, &selected_btn_style, LV_STATE_FOCUSED);
+    
     // lv_obj_add_style(btn4, &base_btn_style, LV_STATE_DEFAULT);
 
     lv_obj_add_style(bat_chrg, &battery_charge_style, LV_STATE_DEFAULT);
     lv_obj_add_style(bat_volt, &battery_voltage_style, LV_STATE_DEFAULT);
     lv_obj_add_style(menu_mode, &base_label_style, LV_STATE_DEFAULT);
+
+    /**********************
+     *      LAYOUT
+     **********************/
 
     // lv_obj_align(btn1, LV_ALIGN_LEFT_MID, 0, 0);
     lv_obj_set_pos(btn1, 0, btn_height);
@@ -221,14 +269,18 @@ static void guiTask(void *pvParameter) {
     ESP_ERROR_CHECK(esp_timer_create(&periodic_timer_args, &periodic_timer));
     ESP_ERROR_CHECK(esp_timer_start_periodic(periodic_timer, LV_TICK_PERIOD_MS * 1000));
 
-    create_demo_application();
+    init_styles();
+    init_ui_elements();
 
-    
+    int cnt = 0;
 
     while (1) {
         /* Delay 1 tick (assumes FreeRTOS tick is 10ms */
         vTaskDelay(pdMS_TO_TICKS(10));
+        // ++cnt;
+        // if(cnt == 250) lv_obj_clean(lv_scr_act());;
 
+        // if(cnt == 600) init_ui_elements();
         /* Try to take the semaphore, call lvgl related function on success */
         if (pdTRUE == xSemaphoreTake(xGuiSemaphore, portMAX_DELAY)) {
             lv_task_handler();
@@ -237,7 +289,7 @@ static void guiTask(void *pvParameter) {
     }
 }
 
-void lv_port_disp_init(void)
+void lv_port_init(void)
 {
     xTaskCreatePinnedToCore(guiTask, "gui", 4096*2, NULL, 0, NULL, 1);    
 }

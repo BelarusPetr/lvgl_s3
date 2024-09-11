@@ -11,13 +11,9 @@
 extern "C" void app_main(void)
 {
     printf("Hello, Tester!\n");
-    // init_gui();
-    lv_port_disp_init();
+    lv_port_init();
 
     printf("lv_port_disp_init\n");
-
-
-    
 
     while (1)
     {
